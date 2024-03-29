@@ -25,12 +25,22 @@
 #include "llvm/TargetParser/Triple.h"
 #include <cassert>
 #include <chrono>
+#include <cstdlib>
 #include <functional>
 #include <mutex>
 #include <string>
 #include <system_error>
 #include <thread>
 #include <utility>
+
+#ifdef __linux__
+  #include <iostream>
+    #include <fcntl.h>
+    #include <semaphore.h>
+    #include <sys/stat.h>
+    #include <errno.h>
+    #define HIP_SM_NAME "/amd-llvm-clang-hip"
+#endif
 
 using namespace clang;
 using namespace driver;
@@ -252,6 +262,13 @@ public:
 #if !LLVM_ENABLE_THREADS
     NumJobs = 1;
 #endif
+#ifdef HIP_SM_NAME
+    sem = sem_open(HIP_SM_NAME, O_CREAT, 00644, NJobs);
+    if (sem == SEM_FAILED) {
+    std::cerr << "sem_open failed: " << errno << std::endl;
+        exit(errno);
+    }
+#endif
     for (auto &Job : Jobs) {
       JState[&Job] = JS_WAIT;
       for (const auto *AI : Job.getDependentActions()) {
@@ -319,7 +336,15 @@ public:
       Work();
       return;
     }
-    std::thread Th(Work);
+    std::thread Th([this, Work]() {
+      if (sem_wait(sem) != 0) {
+        std::cerr << "sem_wait failed: " << errno << std::endl;
+      }
+      Work();
+      if (sem_post(sem) != 0) {
+        std::cerr << "sem_post failed: " << errno << std::endl;
+      }
+    });
     Th.detach();
 #else
     Work();
@@ -328,6 +353,9 @@ public:
 
 private:
   std::mutex Mutex;
+#ifdef HIP_SM_NAME
+  sem_t* sem = nullptr;
+#endif
   const JobList &Jobs;
   llvm::DenseMap<const Command *, JobState> JState;
   llvm::DenseMap<const Action *, llvm::SmallVector<const Command *, 4>>
