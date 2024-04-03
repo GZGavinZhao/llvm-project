@@ -87,6 +87,10 @@ file_magic llvm::identify_magic(StringRef Magic) {
     if (startswith(Magic, "BC\xC0\xDE"))
       return file_magic::bitcode;
     break;
+  case 'C':
+    if (startswith(Magic, "CCOB"))
+      return file_magic::offload_bundle_compressed;
+    break;
   case '!':
     if (startswith(Magic, "!<arch>\n") || startswith(Magic, "!<thin>\n"))
       return file_magic::archive;
