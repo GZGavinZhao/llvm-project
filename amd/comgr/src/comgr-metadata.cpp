@@ -923,6 +923,55 @@ static constexpr const char *CLANG_OFFLOAD_BUNDLER_MAGIC =
 static constexpr size_t OffloadBundleMagicLen =
     strLiteralLength(CLANG_OFFLOAD_BUNDLER_MAGIC);
 
+struct GfxPattern {
+  StringRef root;
+  StringRef suffixes;
+};
+
+static bool matches(const GfxPattern& p, const StringRef s) {
+  if (p.root.size() + 1 != s.size()) {
+    return false;
+  }
+  if (0 != std::memcmp(p.root.data(), s.data(), p.root.size())) {
+    return false;
+  }
+  return p.suffixes.find(s[p.root.size()]) != std::string::npos;
+}
+
+static bool isGfx900EquivalentProcessor(const StringRef processor) {
+  return matches(GfxPattern{"gfx90", "029c"}, processor);
+}
+
+static bool isGfx900SupersetProcessor(const StringRef processor) {
+  return matches(GfxPattern{"gfx90", "0269c"}, processor);
+}
+
+static bool isGfx1030EquivalentProcessor(const StringRef processor) {
+  return matches(GfxPattern{"gfx103", "0123456"}, processor);
+}
+
+static bool isGfx1010EquivalentProcessor(const StringRef processor) {
+  return matches(GfxPattern{"gfx101", "0"}, processor);
+}
+
+static bool isGfx1010SupersetProcessor(const StringRef processor) {
+  return matches(GfxPattern{"gfx101", "0123"}, processor);
+}
+
+static bool isIsaCompatible(const StringRef isaIdent, const StringRef codeObjectIdent) {
+  if (isaIdent == codeObjectIdent) {
+    return true;
+  } else if (isGfx900SupersetProcessor(isaIdent) && isGfx900EquivalentProcessor(codeObjectIdent)) {
+    return true;
+  } else if (isGfx1010SupersetProcessor(isaIdent) && isGfx1010EquivalentProcessor(codeObjectIdent)) {
+    return true;
+  } else if (isGfx1030EquivalentProcessor(isaIdent) && isGfx1030EquivalentProcessor(codeObjectIdent)) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
 bool isCompatibleIsaName(StringRef IsaName, StringRef CodeObjectIsaName) {
   if (IsaName == CodeObjectIsaName) {
     return true;
@@ -938,7 +987,8 @@ bool isCompatibleIsaName(StringRef IsaName, StringRef CodeObjectIsaName) {
     return false;
   }
 
-  if (CodeObjectIdent.Processor != IsaIdent.Processor) {
+  if (CodeObjectIdent.Processor != IsaIdent.Processor
+      && !isIsaCompatible(IsaIdent.Processor, CodeObjectIdent.Processor)) {
     return false;
   }
 
